@@ -19,6 +19,10 @@ tema_app <- bs_theme(
 # ==========================
 #  FUNCIONES AUXILIARES
 # ==========================
+# Operador helper: x %||% y  ->  si x es NULL devuelve y
+`%||%` <- function(x, y) {
+  if (is.null(x)) y else x
+}
 
 # --- Llamada a OpenAI / ChatGPT ---
 generar_causa_ia <- function(texto_contexto, metodo) {
@@ -40,8 +44,10 @@ generar_causa_ia <- function(texto_contexto, metodo) {
   body <- list(
     model = "gpt-4.1-mini",
     messages = list(
-      list(role = "system",
-           content = "Eres un asistente especializado en análisis de causa raíz y redacción técnica en sistemas de gestión de calidad."),
+      list(
+        role = "system",
+        content = "Eres un asistente especializado en análisis de causa raíz y redacción técnica en sistemas de gestión de calidad."
+      ),
       list(role = "user", content = prompt_usuario)
     )
   )
@@ -68,96 +74,26 @@ generar_causa_ia <- function(texto_contexto, metodo) {
   return(texto)
 }
 
-# --- Plot de espina de pescado (Ishikawa) ---
-plot_fishbone <- function(df, problem) {
-  par(mar = c(2, 2, 3, 2))
-  plot(0:1, 0:1, type = "n", axes = FALSE, xlab = "", ylab = "")
-  
-  # Tronco y flecha (espina central)
-  arrows(0.1, 0.5, 0.9, 0.5, lwd = 3, length = 0.12)
-  
-  # Efecto / problema en la "cabeza del pescado"
-  titulo <- ifelse(problem == "" | is.null(problem),
-                   "Desviación / efecto no especificado",
-                   problem)
-  text(0.92, 0.5, labels = "Efecto", adj = c(0, -0.5), cex = 0.9, font = 2)
-  text(0.92, 0.48, labels = titulo, adj = c(0, 1), cex = 0.7)
-  
-  if (is.null(df) || nrow(df) == 0) {
-    text(0.5, 0.2, "Sin causas registradas", cex = 0.9, col = "grey40")
-    return(invisible(NULL))
-  }
-  
-  categorias <- unique(df$Categoria)
-  n_cat <- length(categorias)
-  if (n_cat == 0) return(invisible(NULL))
-  
-  # Posiciones a lo largo del tronco
-  x_pos <- seq(0.2, 0.8, length.out = n_cat)
-  
-  # Dibujar espinas y causas
-  for (i in seq_along(categorias)) {
-    cat_name <- categorias[i]
-    causas_cat <- df$Causa[df$Categoria == cat_name]
-    
-    # alternar arriba/abajo
-    arriba <- (i %% 2 == 1)
-    y_base <- if (arriba) 0.7 else 0.3
-    y_tronco <- 0.5
-    
-    # Espina principal
-    segments(x_pos[i], y_tronco,
-             x_pos[i] - 0.12, y_base,
-             lwd = 2)
-    
-    # Nombre de categoría
-    text(x_pos[i] - 0.13,
-         y_base + ifelse(arriba, 0.06, -0.06),
-         labels = cat_name,
-         cex = 0.7,
-         col = "#F57C00",
-         font = 2)
-    
-    # Causas de la categoría (como sub-espinitas)
-    if (length(causas_cat) > 0) {
-      n_c <- length(causas_cat)
-      offsets <- seq(-0.04, 0.04, length.out = n_c)
-      for (j in seq_along(causas_cat)) {
-        y_c <- y_base + ifelse(arriba, offsets[j], -offsets[j])
-        x_c <- x_pos[i] - 0.20
-        segments(x_pos[i] - 0.12, y_base,
-                 x_c, y_c,
-                 lwd = 1.4)
-        text(x_c - 0.01, y_c,
-             causas_cat[j],
-             adj = c(1, 0.5),
-             cex = 0.6)
-      }
-    }
-  }
-  
-  mtext("Diagrama de Causa–Efecto (Ishikawa)", side = 3, line = 0.2,
-        cex = 1, font = 2, col = "#F57C00")
-}
-
 # --- Plot resumen 5 Porqués ---
 plot_whys <- function(df) {
-  par(mar = c(4, 1, 3, 1))
-  n <- nrow(df)
-  if (is.null(df) || n == 0) {
+  par(mar = c(4, 1, 3, 1), family = "Arial")
+  if (is.null(df) || nrow(df) == 0) {
     plot(0:1, 0:1, type = "n", axes = FALSE, xlab = "", ylab = "")
     text(0.5, 0.5, "Sin información de 5 Porqués", col = "grey40", cex = 0.9)
     return(invisible(NULL))
   }
+  n <- nrow(df)
   
   plot(c(0, 1), c(0, n + 1), type = "n", axes = FALSE,
        xlab = "", ylab = "")
   mtext("Análisis de 5 Porqués", side = 3, line = 0.2,
         cex = 1, font = 2, col = "#F57C00")
   
-  # problema
+  # problema (envuelto)
+  problema <- ifelse(df$Desviacion[1] == "", "Desviación no especificada", df$Desviacion[1])
+  problema_wrapped <- strwrap(problema, width = 60)
   text(0.5, n + 0.8,
-       labels = ifelse(df$Desviacion[1] == "", "Desviación no especificada", df$Desviacion[1]),
+       labels = paste(problema_wrapped, collapse = "\n"),
        cex = 0.7, font = 2)
   
   for (i in seq_len(n)) {
@@ -167,15 +103,17 @@ plot_whys <- function(df) {
          adj = c(0, 0.5), cex = 0.7, font = 2, col = "#F57C00")
     rect(0.25, y - 0.4, 0.95, y + 0.4,
          border = "#F57C00")
+    resp <- ifelse(df$Respuesta[i] == "", "[Sin respuesta]", df$Respuesta[i])
+    resp_wrapped <- strwrap(resp, width = 80)
     text(0.27, y,
-         labels = ifelse(df$Respuesta[i] == "", "[Sin respuesta]", df$Respuesta[i]),
+         labels = paste(resp_wrapped, collapse = "\n"),
          adj = c(0, 0.5), cex = 0.65)
   }
 }
 
 # --- Plot resumen lluvia de ideas ---
 plot_brainstorm <- function(df, problem) {
-  par(mar = c(5, 10, 3, 2))
+  par(mar = c(5, 10, 3, 2), family = "Arial")
   if (is.null(df) || nrow(df) == 0) {
     plot(0:1, 0:1, type = "n", axes = FALSE, xlab = "", ylab = "")
     text(0.5, 0.5, "Sin ideas registradas", col = "grey40", cex = 0.9)
@@ -185,7 +123,6 @@ plot_brainstorm <- function(df, problem) {
   # Ordenar por impacto
   df <- df[order(df$Impacto, decreasing = TRUE), ]
   
-  bar_positions <- seq_len(nrow(df))
   barplot(df$Impacto,
           horiz = TRUE,
           names.arg = df$Idea,
@@ -210,6 +147,20 @@ ui <- fluidPage(
   theme = tema_app,
   tags$head(
     tags$title("Análisis de Causa Raíz"),
+    # html2canvas para screenshot del diagrama Ishikawa
+    tags$script(src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"),
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('capture-fishbone', function(message) {
+        var target = document.getElementById('fishbone-container');
+        if (!target) return;
+        html2canvas(target).then(function(canvas) {
+          var link = document.createElement('a');
+          link.download = message.filename || 'diagrama_causa_efecto.png';
+          link.href = canvas.toDataURL();
+          link.click();
+        });
+      });
+    ")),
     tags$style(HTML("
       body {
         background-color: #FFF7F0;
@@ -314,6 +265,100 @@ ui <- fluidPage(
       .shiny-output-error-validation {
         color: #E64A19;
         font-size: 12px;
+      }
+
+      /* === DIAGRAMA HTML DE ISHIKAWA (LO QUE SE CAPTURA) === */
+      #fishbone-container {
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 20px 28px 24px;
+        border: 1px solid #FFE0B2;
+        min-height: 380px;
+      }
+      .fb-title {
+        text-align: center;
+        font-weight: 700;
+        color: #F57C00;
+        margin-bottom: 10px;
+        font-size: 18px;
+      }
+      .fb-problem-label {
+        font-weight: 600;
+        font-size: 13px;
+        color: #E65100;
+        margin-bottom: 4px;
+      }
+      .fb-problem-text {
+        font-size: 13px;
+        color: #5D4037;
+        margin-bottom: 14px;
+        white-space: pre-wrap;
+      }
+      .fb-axis-wrapper {
+        position: relative;
+        margin: 40px 70px;
+      }
+      .fb-axis {
+        height: 2px;
+        background: #000000;
+        position: relative;
+      }
+      .fb-axis::after {
+        content: '';
+        position: absolute;
+        right: -12px;
+        top: -4px;
+        border-left: 12px solid #000000;
+        border-top: 6px solid transparent;
+        border-bottom: 6px solid transparent;
+      }
+      .fb-effect-label {
+        position: absolute;
+        right: -60px;
+        top: -10px;
+        font-weight: 700;
+        color: #F57C00;
+        font-size: 13px;
+      }
+      .fb-top-row,
+      .fb-bottom-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        margin: 0 70px;
+      }
+      .fb-top-row {
+        margin-bottom: 18px;
+      }
+      .fb-bottom-row {
+        margin-top: 18px;
+      }
+      .fb-branch {
+        flex: 1;
+        font-size: 12px;
+      }
+      .fb-category {
+        font-weight: 700;
+        color: #F57C00;
+        margin-bottom: 4px;
+      }
+      .fb-branch ul {
+        padding-left: 16px;
+        margin: 0;
+      }
+      .fb-branch li {
+        margin-bottom: 2px;
+      }
+      .fb-root-title {
+        margin-top: 22px;
+        font-weight: 600;
+        color: #E65100;
+        font-size: 13px;
+      }
+      .fb-root-text {
+        font-size: 13px;
+        color: #5D4037;
+        white-space: pre-wrap;
       }
     "))
   ),
@@ -477,101 +522,44 @@ ui <- fluidPage(
                        placeholder = "Ejemplo: No se realizó el análisis de riesgo para definir la frecuencia de participación en ensayos de aptitud...",
                        rows = 4
                      ),
+                     span("Causas por categoría", class = "section-title"),
                      p(class = "section-help",
-                       "En cada categoría escriba una causa por línea. Estas representarán las espinas del diagrama.")
+                       "Escriba una causa por línea. El texto se mostrará como viñetas en cada categoría."),
+                     textAreaInput("fish_metodo",   "Método", rows = 3,
+                                   placeholder = "Ej: Procedimiento desactualizado\nNo incluye análisis de riesgo 7.3.1"),
+                     textAreaInput("fish_personal", "Personal", rows = 3,
+                                   placeholder = "Ej: Desconocimiento del requisito\nFalta de apropiación del CEA-3.0-04"),
+                     textAreaInput("fish_equipos",  "Equipos", rows = 3,
+                                   placeholder = "Ej: No aplica / No afecta\nFalta de software para seguimiento"),
+                     textAreaInput("fish_materiales", "Materiales / Insumos", rows = 3,
+                                   placeholder = "Ej: No aplica / No afecta la desviación"),
+                     textAreaInput("fish_entorno", "Entorno / Ambiente", rows = 3,
+                                   placeholder = "Ej: Cambios normativos recientes\nAlta carga de auditorías"),
+                     textAreaInput("fish_medicion", "Medición / Control", rows = 3,
+                                   placeholder = "Ej: Falta de revisión anual de matrices de riesgo\nSeguimiento inefectivo de EA/CILD"),
+                     span("Causa raíz final", class = "section-title"),
+                     p(class = "section-help",
+                       "Redacte aquí la causa raíz final. Puede copiar una de las opciones sugeridas ",
+                       "por ChatGPT y ajustarla según su criterio."),
+                     textAreaInput(
+                       "fish_root_text",
+                       label = NULL,
+                       placeholder = "Ejemplo: La reincidencia en la no consideración de los requisitos del CEA-3.0-04 para EA/CILD se debe a la falta de actualización del procedimiento interno, ausencia de responsable definido para el análisis de riesgo y débil seguimiento a la planificación anual.",
+                       rows = 4
+                     ),
+                     br(),
+                     actionButton("download_fish_img", "Descargar imagen del diagrama")
                  )
                ),
                column(
                  width = 8,
                  div(class = "app-card",
-                     span("Registro de causas por categoría", class = "section-title"),
-                     fluidRow(
-                       column(
-                         width = 4,
-                         div(class = "fishbone-box",
-                             span("Método", class = "fishbone-category"),
-                             textAreaInput(
-                               "fish_metodo", NULL,
-                               placeholder = "Ej: Procedimiento desactualizado\nNo incluye análisis de riesgo 7.3.1",
-                               rows = 4
-                             )
-                         )
-                       ),
-                       column(
-                         width = 4,
-                         div(class = "fishbone-box",
-                             span("Personal", class = "fishbone-category"),
-                             textAreaInput(
-                               "fish_personal", NULL,
-                               placeholder = "Ej: Desconocimiento del requisito\nFalta de apropiación del CEA-3.0-04",
-                               rows = 4
-                             )
-                         )
-                       ),
-                       column(
-                         width = 4,
-                         div(class = "fishbone-box",
-                             span("Equipos", class = "fishbone-category"),
-                             textAreaInput(
-                               "fish_equipos", NULL,
-                               placeholder = "Ej: No aplica / No afecta\nFalta de software para seguimiento",
-                               rows = 4
-                             )
-                         )
-                       )
-                     ),
-                     br(),
-                     fluidRow(
-                       column(
-                         width = 4,
-                         div(class = "fishbone-box",
-                             span("Materiales / Insumos", class = "fishbone-category"),
-                             textAreaInput(
-                               "fish_materiales", NULL,
-                               placeholder = "Ej: No aplica / No afecta la desviación",
-                               rows = 4
-                             )
-                         )
-                       ),
-                       column(
-                         width = 4,
-                         div(class = "fishbone-box",
-                             span("Entorno / Ambiente", class = "fishbone-category"),
-                             textAreaInput(
-                               "fish_entorno", NULL,
-                               placeholder = "Ej: Cambios normativos recientes\nAlta carga de auditorías",
-                               rows = 4
-                             )
-                         )
-                       ),
-                       column(
-                         width = 4,
-                         div(class = "fishbone-box",
-                             span("Medición / Control", class = "fishbone-category"),
-                             textAreaInput(
-                               "fish_medicion", NULL,
-                               placeholder = "Ej: Falta de revisión anual de matrices de riesgo\nSeguimiento inefectivo de EA/CILD",
-                               rows = 4
-                             )
-                         )
-                       )
-                     ),
-                     br(),
-                     downloadButton("download_fish_img", "Descargar imagen del diagrama")
-                 )
-               )
-             ),
-             br(),
-             fluidRow(
-               column(
-                 width = 6,
-                 div(class = "app-card",
-                     span("Diagrama tipo espina de pescado", class = "section-title"),
-                     plotOutput("fish_plot", height = "420px")
-                 )
-               ),
-               column(
-                 width = 6,
+                     span("Vista del diagrama tipo espina de pescado", class = "section-title"),
+                     p(class = "section-help",
+                       "Este bloque es el que se captura como imagen. El texto se ajusta automáticamente, sin sobreponerse."),
+                     uiOutput("fishbone_html")
+                 ),
+                 br(),
                  div(class = "app-card",
                      div(class = "ai-box",
                          span("Asistente IA - Redacción de causa raíz", class = "ai-title"),
@@ -707,7 +695,6 @@ server <- function(input, output, session) {
   
   output$whys_plot <- renderPlot({
     df <- whys_data()
-
     plot_whys(df)
   })
   
@@ -755,7 +742,6 @@ server <- function(input, output, session) {
       lineas <- lineas[lineas != ""]
       if (length(lineas) == 0) return(NULL)
       data.frame(
-        Desviacion = if (is.null(input$fish_problem)) "" else input$fish_problem,
         Categoria  = categorias[i],
         Causa      = lineas,
         stringsAsFactors = FALSE
@@ -765,24 +751,76 @@ server <- function(input, output, session) {
     do.call(rbind, causas_list)
   })
   
-  output$fish_plot <- renderPlot({
+  output$fishbone_html <- renderUI({
     df <- fishbone_df()
     problem <- if (is.null(input$fish_problem)) "" else input$fish_problem
-    plot_fishbone(df, problem)
+    root    <- if (is.null(input$fish_root_text)) "" else input$fish_root_text
+    
+    if (is.null(df)) {
+      df <- data.frame(Categoria = character(), Causa = character())
+    }
+    
+    cats <- unique(df$Categoria)
+    
+    # Si no hay categorías, no calculamos seq() para evitar el error
+    if (length(cats) == 0) {
+      top_cats    <- character(0)
+      bottom_cats <- character(0)
+    } else {
+      # 1,3,5 arriba; 2,4,6 abajo
+      top_cats    <- cats[seq(1, length(cats), by = 2)]
+      bottom_cats <- setdiff(cats, top_cats)
+    }
+    
+    make_branch <- function(cat) {
+      causas <- df$Causa[df$Categoria == cat]
+      if (length(causas) == 0) return(NULL)
+      tags$div(
+        class = "fb-branch",
+        tags$div(class = "fb-category", cat),
+        tags$ul(
+          lapply(causas, function(ca) tags$li(ca))
+        )
+      )
+    }
+    
+    tags$div(
+      id = "fishbone-container",
+      class = "fb-container",
+      tags$div(class = "fb-title", "Diagrama de Causa–Efecto (Ishikawa)"),
+      tags$div(class = "fb-problem-label", "Desviación / efecto"),
+      tags$div(class = "fb-problem-text", problem),
+      
+      tags$div(
+        class = "fb-axis-wrapper",
+        tags$div(class = "fb-axis"),
+        tags$div(class = "fb-effect-label", "Efecto")
+      ),
+      
+      tags$div(
+        class = "fb-top-row",
+        lapply(top_cats, make_branch)
+      ),
+      tags$div(
+        class = "fb-bottom-row",
+        lapply(bottom_cats, make_branch)
+      ),
+      
+      tags$div(class = "fb-root-title", "Causa raíz"),
+      tags$div(
+        class = "fb-root-text",
+        if (root == "") "Sin causa raíz registrada." else root
+      )
+    )
   })
   
-  output$download_fish_img <- downloadHandler(
-    filename = function() {
-      paste0("diagrama_causa_efecto_", Sys.Date(), ".png")
-    },
-    content = function(file) {
-      df <- fishbone_df()
-      problem <- if (is.null(input$fish_problem)) "" else input$fish_problem
-      png(file, width = 1400, height = 700, res = 130)
-      plot_fishbone(df, problem)
-      dev.off()
-    }
-  )
+  
+  observeEvent(input$download_fish_img, {
+    session$sendCustomMessage(
+      "capture-fishbone",
+      list(filename = paste0("diagrama_causa_efecto_", Sys.Date(), ".png"))
+    )
+  })
   
   # IA - Causa–Efecto
   observeEvent(input$fish_ai_btn, {
@@ -827,7 +865,6 @@ server <- function(input, output, session) {
     df <- rbind(df, nueva)
     ideas(df)
     
-    # Limpiar solo el campo de texto de la idea
     updateTextInput(session, "idea_text", value = "")
   })
   
@@ -896,3 +933,4 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
